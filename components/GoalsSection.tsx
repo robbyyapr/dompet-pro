@@ -41,6 +41,10 @@ export const GoalsSection: React.FC<Props> = ({ goals }) => {
               <span>Rp {goal.currentAmount.toLocaleString('id-ID')}</span>
               <span>Sisa: Rp {(goal.targetAmount - goal.currentAmount).toLocaleString('id-ID')}</span>
             </div>
+
+            {goal.deadline && (
+              <p className="mt-2 text-[10px] text-secondary">Deadline: {new Date(goal.deadline).toLocaleDateString('id-ID')}</p>
+            )}
           </div>
         );
       })}

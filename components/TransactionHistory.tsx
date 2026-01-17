@@ -10,6 +10,7 @@ interface Props {
   selectedAccountId: string | null;
   onUpdateTransactions: (ids: string[], updates: { category?: string; accountId?: string }) => void;
   onDeleteTransactions: (ids: string[]) => void;
+  onClearAllTransactions?: () => void;
 }
 
 export const TransactionHistory: React.FC<Props> = ({ 
@@ -17,8 +18,10 @@ export const TransactionHistory: React.FC<Props> = ({
   accounts, 
   selectedAccountId, 
   onUpdateTransactions,
-  onDeleteTransactions
+  onDeleteTransactions,
+  onClearAllTransactions
 }) => {
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [search, setSearch] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -96,6 +99,9 @@ export const TransactionHistory: React.FC<Props> = ({
            </NeumorphicButton>
            <NeumorphicButton onClick={() => {setStartDate(''); setEndDate(''); setSearch(''); setSelectedIds(new Set());}} className="text-xs">Reset Filter</NeumorphicButton>
            <NeumorphicButton onClick={() => window.print()} className="bg-green-500/10 text-green-500 text-xs">📄 Report (PDF)</NeumorphicButton>
+           {onClearAllTransactions && transactions.length > 0 && (
+             <NeumorphicButton onClick={() => setShowClearConfirm(true)} className="bg-red-500/10 text-red-500 text-xs">🗑️ Hapus Semua</NeumorphicButton>
+           )}
         </div>
       </div>
 
@@ -169,6 +175,42 @@ export const TransactionHistory: React.FC<Props> = ({
           onCancel={() => setShowBulkModal(false)}
           onApply={handleBulkUpdateApply}
         />
+      )}
+
+      {/* Clear All Confirmation Modal */}
+      {showClearConfirm && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="neu-card p-6 max-w-sm w-full animate-in zoom-in duration-200">
+            <div className="text-center mb-6">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-500/20 flex items-center justify-center text-3xl">
+                ⚠️
+              </div>
+              <h3 className="text-xl font-bold text-primary mb-2">Hapus Semua Riwayat?</h3>
+              <p className="text-secondary text-sm">
+                Anda akan menghapus <span className="font-bold text-red-500">{transactions.length} transaksi</span>. 
+                Tindakan ini tidak dapat dibatalkan!
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowClearConfirm(false)}
+                className="flex-1 py-3 px-4 rounded-xl neu-button text-primary font-semibold text-sm"
+              >
+                Batal
+              </button>
+              <button
+                onClick={() => {
+                  onClearAllTransactions?.();
+                  setShowClearConfirm(false);
+                  setSelectedIds(new Set());
+                }}
+                className="flex-1 py-3 px-4 rounded-xl bg-red-500 text-white font-semibold text-sm hover:bg-red-600 transition-colors"
+              >
+                Ya, Hapus Semua
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

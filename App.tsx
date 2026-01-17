@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { AccountSection } from './components/AccountSection';
 import { ChartsSection } from './components/ChartsSection';
@@ -10,9 +9,10 @@ import { BudgetSection } from './components/BudgetSection';
 import { SystemHub } from './components/SystemHub';
 import { PrivacyPolicy } from './components/PrivacyPolicy';
 import { AuthLock } from './components/AuthLock';
-import { INITIAL_ACCOUNTS, INITIAL_TRANSACTIONS, INITIAL_GOALS, INITIAL_BUDGETS } from './constants';
+// Data loaded from SQLite via API - no dummy data imports
 import { Account, Transaction, AppState, Goal, Budget, SystemLog } from './types';
 import { ParsedCommand } from './services/geminiService';
+import { syncState, isSessionValid, clearSession, fetchState } from './services/apiClient';
 
 const App: React.FC = () => {
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -20,19 +20,25 @@ const App: React.FC = () => {
            (!localStorage.getItem('theme') && window.matchMedia('(prefers-color-scheme: dark)').matches);
   });
 
-  const [state, setState] = useState<AppState>({
-    accounts: INITIAL_ACCOUNTS,
-    transactions: INITIAL_TRANSACTIONS,
-    goals: INITIAL_GOALS,
-    budgets: INITIAL_BUDGETS,
-    logs: [],
-    isLocked: true,
-    otpCode: null
+  const [state, setState] = useState<AppState>(() => {
+    // Check if session is valid on initial load - persist session across refresh
+    const hasValidSession = isSessionValid();
+    console.log('[Auth] Session valid on load:', hasValidSession);
+    return {
+      accounts: [],
+      transactions: [],
+      goals: [],
+      budgets: [],
+      logs: [],
+      isLocked: !hasValidSession,
+      otpCode: null
+    };
   });
 
   const [activeTab, setActiveTab] = useState<'dashboard' | 'history' | 'goals' | 'budget' | 'analysis' | 'system'>('dashboard');
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [showPrivacy, setShowPrivacy] = useState(false);
+  const [dataLoaded, setDataLoaded] = useState(false);
 
   useEffect(() => {
     if (isDarkMode) {
@@ -43,6 +49,41 @@ const App: React.FC = () => {
       localStorage.setItem('theme', 'light');
     }
   }, [isDarkMode]);
+
+  // Load real data from database when unlocked
+  useEffect(() => {
+    const loadData = async () => {
+      if (!state.isLocked && !dataLoaded) {
+        const data = await fetchState();
+        if (data) {
+          setState(prev => ({
+            ...prev,
+            accounts: data.accounts || [],
+            transactions: data.transactions || [],
+            goals: data.goals || [],
+            budgets: data.budgets || []
+          }));
+        }
+        setDataLoaded(true);
+      }
+    };
+    loadData();
+  }, [state.isLocked, dataLoaded]);
+
+  // Sync state to database whenever it changes
+  useEffect(() => {
+    if (!state.isLocked && dataLoaded) {
+      const syncTimeout = setTimeout(() => {
+        syncState({
+          accounts: state.accounts,
+          transactions: state.transactions,
+          goals: state.goals,
+          budgets: state.budgets
+        });
+      }, 500);
+      return () => clearTimeout(syncTimeout);
+    }
+  }, [state.accounts, state.transactions, state.goals, state.budgets, state.isLocked, dataLoaded]);
 
   const addLog = useCallback((type: SystemLog['type'], message: string, status: SystemLog['status'] = 'SUCCESS', latency?: number) => {
     const newLog: SystemLog = {
@@ -58,7 +99,7 @@ const App: React.FC = () => {
 
   const handleBulkUpdate = useCallback((ids: string[], updates: { category?: string; accountId?: string }) => {
     setState(prev => {
-      const { transactions, accounts } = prev;
+      const { transactions } = prev;
       const newTransactions = transactions.map(t => {
         if (ids.includes(t.id)) {
           return { ...t, ...updates };
@@ -76,6 +117,81 @@ const App: React.FC = () => {
       addLog('SECURITY', `Deleted ${ids.length} transactions permanently`, 'WARNING');
       return { ...prev, transactions: filtered };
     });
+  }, [addLog]);
+
+  const handleClearAllTransactions = useCallback(() => {
+    setState(prev => {
+      addLog('SECURITY', `Cleared all ${prev.transactions.length} transactions`, 'WARNING');
+      return { ...prev, transactions: [] };
+    });
+  }, [addLog]);
+
+  // Goal handlers
+  const handleAddGoal = useCallback((goal: Omit<Goal, 'id'>) => {
+    const newGoal: Goal = { ...goal, id: Math.random().toString(36).substr(2, 9) };
+    setState(prev => ({ ...prev, goals: [...prev.goals, newGoal] }));
+    addLog('SYSTEM', `Added goal: ${goal.name}`, 'SUCCESS');
+  }, [addLog]);
+
+  const handleEditGoal = useCallback((goal: Goal) => {
+    setState(prev => ({
+      ...prev,
+      goals: prev.goals.map(g => g.id === goal.id ? goal : g)
+    }));
+    addLog('SYSTEM', `Updated goal: ${goal.name}`, 'SUCCESS');
+  }, [addLog]);
+
+  const handleDeleteGoal = useCallback((id: string) => {
+    setState(prev => ({
+      ...prev,
+      goals: prev.goals.filter(g => g.id !== id)
+    }));
+    addLog('SECURITY', 'Deleted goal permanently', 'WARNING');
+  }, [addLog]);
+
+  // Budget handlers
+  const handleAddBudget = useCallback((budget: Budget) => {
+    setState(prev => ({ ...prev, budgets: [...prev.budgets, budget] }));
+    addLog('SYSTEM', `Added budget: ${budget.category}`, 'SUCCESS');
+  }, [addLog]);
+
+  const handleEditBudget = useCallback((category: string, budget: Budget) => {
+    setState(prev => ({
+      ...prev,
+      budgets: prev.budgets.map(b => b.category === category ? budget : b)
+    }));
+    addLog('SYSTEM', `Updated budget: ${budget.category}`, 'SUCCESS');
+  }, [addLog]);
+
+  const handleDeleteBudget = useCallback((category: string) => {
+    setState(prev => ({
+      ...prev,
+      budgets: prev.budgets.filter(b => b.category !== category)
+    }));
+    addLog('SECURITY', 'Deleted budget permanently', 'WARNING');
+  }, [addLog]);
+
+  // Account handlers
+  const handleAddAccount = useCallback((account: Omit<Account, 'id'>) => {
+    const newAccount: Account = { ...account, id: Math.random().toString(36).substr(2, 9) };
+    setState(prev => ({ ...prev, accounts: [...prev.accounts, newAccount] }));
+    addLog('SYSTEM', `Added account: ${account.name}`, 'SUCCESS');
+  }, [addLog]);
+
+  const handleEditAccount = useCallback((account: Account) => {
+    setState(prev => ({
+      ...prev,
+      accounts: prev.accounts.map(a => a.id === account.id ? account : a)
+    }));
+    addLog('SYSTEM', `Updated account: ${account.name}`, 'SUCCESS');
+  }, [addLog]);
+
+  const handleDeleteAccount = useCallback((id: string) => {
+    setState(prev => ({
+      ...prev,
+      accounts: prev.accounts.filter(a => a.id !== id)
+    }));
+    addLog('SECURITY', 'Deleted account permanently', 'WARNING');
   }, [addLog]);
 
   const addTransaction = useCallback((cmd: ParsedCommand) => {
@@ -133,108 +249,161 @@ const App: React.FC = () => {
 
   const totalBalance = useMemo(() => state.accounts.reduce((acc, curr) => acc + curr.balance, 0), [state.accounts]);
 
-  const handleUnlock = () => {
+  const handleUnlock = async () => {
     addLog('SECURITY', 'PIN access authorized', 'SUCCESS');
+    // Force reload data from server to get latest Telegram changes
+    setDataLoaded(false);
     setState(prev => ({ ...prev, isLocked: false }));
   };
   
   const handleLock = () => setState(prev => ({ ...prev, isLocked: true }));
 
+  const handleClearAllData = () => {
+    setState({
+      accounts: [],
+      transactions: [],
+      goals: [],
+      budgets: [],
+      logs: [],
+      isLocked: true,
+      otpCode: null
+    });
+    addLog('SECURITY', 'All data cleared by user', 'WARNING');
+  };
+
   if (state.isLocked) {
-    return <AuthLock onUnlock={handleUnlock} />;
+    return <AuthLock onUnlock={handleUnlock} onClearAllData={handleClearAllData} />;
   }
 
   const filteredTransactions = selectedAccountId 
     ? state.transactions.filter(t => t.accountId === selectedAccountId)
     : state.transactions;
 
+  const tabs = [
+    { id: 'dashboard', label: 'Overview', icon: '📊' },
+    { id: 'budget', label: 'Budget', icon: '💸' },
+    { id: 'goals', label: 'Goals', icon: '🎯' },
+    { id: 'history', label: 'History', icon: '🕒' },
+    { id: 'analysis', label: 'AI', icon: '🧠' },
+    { id: 'system', label: 'System', icon: '⚙️' },
+  ] as const;
+
   return (
-    <div className={`min-h-screen p-4 md:p-8 lg:px-20 lg:py-12 print:p-0 transition-colors duration-400`}>
-      {/* v3.6 Header */}
-      <header className="flex justify-between items-center mb-10 no-print">
-        <div className="relative">
-          <div className="flex items-center gap-3">
-            <h1 className="text-3xl font-black text-primary tracking-tight">Dompet</h1>
-            <span className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-[9px] font-black px-2 py-0.5 rounded-full shadow-lg vibrant-glow">PRO v3.6</span>
-          </div>
-          <p className="text-secondary font-medium italic text-sm">Next-Gen Wealth Management</p>
-        </div>
-        <div className="flex items-center space-x-3 md:space-x-4">
-          <div className="hidden md:flex flex-col text-right mr-4">
-             <span className="text-[10px] font-black text-secondary uppercase tracking-widest">Global Assets</span>
-             <span className="text-xl font-black text-blue-500 drop-shadow-sm">Rp {totalBalance.toLocaleString('id-ID')}</span>
-          </div>
-          <button onClick={() => setIsDarkMode(!isDarkMode)} className="neu-button w-12 h-12 rounded-2xl flex items-center justify-center text-xl">
-            {isDarkMode ? '☀️' : '🌙'}
-          </button>
-          <button onClick={handleLock} className="neu-button w-12 h-12 rounded-2xl flex items-center justify-center text-xl">
-            🔒
-          </button>
-          <div className="w-12 h-12 neu-card rounded-full overflow-hidden border-2 border-white/50 shadow-lg cursor-pointer hover:scale-110 hover:shadow-2xl transition-all">
-            <img src="https://picsum.photos/seed/finance_v36/100" alt="Avatar" />
+    <div className="min-h-screen p-4 md:p-6 lg:p-8">
+      {/* Header */}
+      <header className="max-w-6xl mx-auto mb-6 md:mb-8">
+        <div className="neu-card p-4 md:p-6">
+          <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+            <div className="text-center sm:text-left">
+              <div className="flex items-center justify-center sm:justify-start gap-3">
+                <h1 className="text-2xl md:text-3xl font-black text-primary">Dompet</h1>
+                <span className="bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-[10px] font-bold px-2 py-1 rounded-full">
+                  PRO
+                </span>
+              </div>
+              <p className="text-secondary text-sm mt-1">Smart Finance Manager</p>
+            </div>
+            
+            <div className="flex items-center gap-3">
+              <div className="hidden md:block text-right mr-2">
+                <p className="text-[10px] text-secondary uppercase tracking-wider font-bold">Total Assets</p>
+                <p className="text-lg font-black text-primary">Rp {totalBalance.toLocaleString('id-ID')}</p>
+              </div>
+              <button 
+                onClick={() => setIsDarkMode(!isDarkMode)} 
+                className="neu-button w-11 h-11 flex items-center justify-center text-lg"
+              >
+                {isDarkMode ? '☀️' : '🌙'}
+              </button>
+              <button 
+                onClick={handleLock} 
+                className="neu-button w-11 h-11 flex items-center justify-center text-lg"
+              >
+                🔒
+              </button>
+            </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto">
-        <div className="no-print">
-          <AccountSection accounts={state.accounts} selectedAccountId={selectedAccountId} onSelectAccount={setSelectedAccountId} />
-        </div>
+      <main className="max-w-6xl mx-auto space-y-6">
+        {/* Account Cards */}
+        <AccountSection 
+          accounts={state.accounts} 
+          selectedAccountId={selectedAccountId} 
+          onSelectAccount={setSelectedAccountId} 
+        />
         
-        <TelegramSimulation onAddTransaction={addTransaction} />
+        {/* Telegram Input */}
+        <TelegramSimulation 
+          onAddTransaction={addTransaction}
+          accounts={state.accounts}
+          goals={state.goals}
+          budgets={state.budgets}
+          onAddGoal={handleAddGoal}
+          onEditGoal={handleEditGoal}
+          onDeleteGoal={handleDeleteGoal}
+          onAddBudget={handleAddBudget}
+          onEditBudget={handleEditBudget}
+          onDeleteBudget={handleDeleteBudget}
+          onAddAccount={handleAddAccount}
+          onEditAccount={handleEditAccount}
+          onDeleteAccount={handleDeleteAccount}
+        />
 
         {/* Tab Navigation */}
-        <div className="flex space-x-2 md:space-x-4 mb-8 overflow-x-auto pb-4 no-print scrollbar-hide">
-          {(['dashboard', 'budget', 'goals', 'history', 'analysis', 'system'] as const).map(tab => (
-            <button 
-              key={tab}
-              onClick={() => setActiveTab(tab)} 
-              className={`px-5 py-3 rounded-2xl font-black transition-all whitespace-nowrap text-[11px] uppercase tracking-wider ${
-                activeTab === tab ? 'neu-inset text-blue-500' : 'neu-button text-secondary'
-              }`}
-            >
-              {tab === 'dashboard' ? '📊 Overview' : 
-               tab === 'budget' ? '💸 Budget' :
-               tab === 'goals' ? '🎯 Target' :
-               tab === 'history' ? '🕒 History' :
-               tab === 'analysis' ? '🧠 AI Advisor' : '⚙️ System'}
-            </button>
-          ))}
+        <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0 no-print">
+          <div className="flex gap-2 md:gap-3 min-w-max">
+            {tabs.map(tab => (
+              <button 
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)} 
+                className={`px-4 py-2.5 rounded-xl font-semibold text-xs transition-all flex items-center gap-2 ${
+                  activeTab === tab.id 
+                    ? 'neu-inset text-blue-500' 
+                    : 'neu-button text-secondary hover:text-primary'
+                }`}
+              >
+                <span>{tab.icon}</span>
+                <span className="hidden sm:inline">{tab.label}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="print:block min-h-[500px]">
-            {activeTab === 'dashboard' && <ChartsSection transactions={filteredTransactions} isDarkMode={isDarkMode} />}
-            {activeTab === 'budget' && <BudgetSection budgets={state.budgets} />}
-            {activeTab === 'goals' && <GoalsSection goals={state.goals} />}
-            {activeTab === 'history' && (
-              <TransactionHistory 
-                transactions={state.transactions} 
-                accounts={state.accounts} 
-                selectedAccountId={selectedAccountId}
-                onUpdateTransactions={handleBulkUpdate}
-                onDeleteTransactions={handleBulkDelete}
-              />
-            )}
-            {activeTab === 'analysis' && <FinancialAnalysis transactions={filteredTransactions} accounts={state.accounts} goals={state.goals} />}
-            {activeTab === 'system' && <SystemHub logs={state.logs} transactions={state.transactions} accounts={state.accounts} />}
+        {/* Content */}
+        <div className="min-h-[400px] animate-fadeIn">
+          {activeTab === 'dashboard' && <ChartsSection transactions={filteredTransactions} isDarkMode={isDarkMode} />}
+          {activeTab === 'budget' && <BudgetSection budgets={state.budgets} />}
+          {activeTab === 'goals' && <GoalsSection goals={state.goals} />}
+          {activeTab === 'history' && (
+            <TransactionHistory 
+              transactions={state.transactions} 
+              accounts={state.accounts} 
+              selectedAccountId={selectedAccountId}
+              onUpdateTransactions={handleBulkUpdate}
+              onDeleteTransactions={handleBulkDelete}
+              onClearAllTransactions={handleClearAllTransactions}
+            />
+          )}
+          {activeTab === 'analysis' && <FinancialAnalysis transactions={filteredTransactions} accounts={state.accounts} goals={state.goals} />}
+          {activeTab === 'system' && <SystemHub logs={state.logs} transactions={state.transactions} accounts={state.accounts} />}
         </div>
       </main>
 
-      <footer className="mt-24 text-center pb-12 no-print border-t border-gray-300/20 pt-10">
-        <div className="flex flex-col items-center">
-          <div className="w-10 h-1 rounded-full bg-gray-300/30 mb-6"></div>
-          <p className="text-primary text-xl font-black tracking-tighter">DOMPET PRO</p>
-          <p className="text-secondary text-[10px] font-bold uppercase tracking-[0.4em] mt-1 mb-8">Intelligence Layer Activated</p>
-          <div className="flex flex-wrap justify-center gap-4 md:gap-8 text-secondary text-[10px] font-black uppercase tracking-widest">
-             <button onClick={() => { setActiveTab('system'); window.scrollTo(0,0); }} className="hover:text-blue-500 transition-colors flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" /> Security Audit
-             </button>
-             <button onClick={() => { setActiveTab('system'); window.scrollTo(0,0); }} className="hover:text-blue-500 transition-colors">AI Logs</button>
-             <button onClick={() => { setActiveTab('system'); window.scrollTo(0,0); }} className="hover:text-blue-500 transition-colors">API Status</button>
-             <button onClick={() => setShowPrivacy(true)} className="hover:text-blue-500 transition-colors">Privacy Policy</button>
-          </div>
-          <p className="text-secondary text-[10px] mt-10 opacity-40 font-medium">Build 3.6.0.STABLE • Developed for robbyaprianto</p>
+      {/* Footer */}
+      <footer className="max-w-6xl mx-auto mt-12 pt-8 border-t border-gray-200/20 text-center no-print">
+        <p className="text-primary font-bold text-lg">DOMPET PRO</p>
+        <p className="text-secondary text-[10px] uppercase tracking-widest mt-1 mb-6">v4.1 • Smart Finance</p>
+        <div className="flex flex-wrap justify-center gap-4 text-secondary text-[10px] font-semibold">
+          <button onClick={() => setActiveTab('system')} className="hover:text-blue-500 transition-colors">
+            System Logs
+          </button>
+          <button onClick={() => setShowPrivacy(true)} className="hover:text-blue-500 transition-colors">
+            Privacy Policy
+          </button>
         </div>
+        <p className="text-secondary/50 text-[10px] mt-6">Built for robbyaprianto</p>
       </footer>
 
       {showPrivacy && <PrivacyPolicy onClose={() => setShowPrivacy(false)} />}

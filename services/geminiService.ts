@@ -1,7 +1,7 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 
 export interface ParsedCommand {
   type: 'Income' | 'Expense' | 'Transfer';
@@ -29,7 +29,7 @@ export const parseTelegramCommand = async (command: string): Promise<ParsedComma
   try {
     const response = await ai.models.generateContent({
       model: "gemini-3-flash-preview",
-      contents: `Parse command keuangan ini untuk Dompet v3.0: "${command}". 
+      contents: `Parse command keuangan ini untuk Dompet v4.1: "${command}". 
       Tentukan apakah ini Pengeluaran, Pemasukan, atau Transfer. Akun target dan nominal.`,
       config: {
         responseMimeType: "application/json",
@@ -57,7 +57,7 @@ export const analyzeFinances = async (transactions: any[], accounts: any[], goal
     
     const response = await ai.models.generateContent({
       model: "gemini-3-pro-preview",
-      contents: `Anda adalah Financial Strategist Dompet v3.0. 
+      contents: `Anda adalah Financial Strategist Dompet v4.1. 
       Berikan analisa mendalam dalam Bahasa Indonesia:
       1. Skor Kesehatan Keuangan (0-100).
       2. Prediksi saldo akhir bulan berdasarkan 'burn rate' saat ini.

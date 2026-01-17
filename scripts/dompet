@@ -1,0 +1,164 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+COMMAND="${1:-start}"
+ENV_FILE="${2:-.env.local}"
+PM2_CONFIG="${PM2_CONFIG:-ecosystem.config.cjs}"
+
+usage() {
+  echo "Usage: dompet [start|stop|restart|status] [env_file]" >&2
+  exit 1
+}
+
+if [[ ! "$COMMAND" =~ ^(start|stop|restart|status)$ ]]; then
+  usage
+fi
+
+if [[ ! -f "$ENV_FILE" ]]; then
+  echo "Env file not found: $ENV_FILE" >&2
+  exit 1
+fi
+
+# Load env vars safely
+set -a
+# shellcheck disable=SC1090
+source "$ENV_FILE"
+set +a
+
+BASE_URL="${VITE_BASE_URL:-${VITE_API_BASE_URL:-}}"
+if [[ -z "$BASE_URL" ]]; then
+  echo "VITE_BASE_URL or VITE_API_BASE_URL is required in $ENV_FILE" >&2
+  exit 1
+fi
+
+# Extract domain (strip protocol and path)
+DOMAIN=$(echo "$BASE_URL" | sed -E 's#^https?://##' | sed -E 's#/.*$##')
+if [[ -z "$DOMAIN" ]]; then
+  echo "Unable to parse domain from $BASE_URL" >&2
+  exit 1
+fi
+
+HTTP_PORT="${WEB_PORT:-3000}"
+BOT_PORT="${BOT_PORT:-8787}"
+OUTPUT_FILE="${OUTPUT_FILE:-/etc/nginx/conf.d/dompet-pro.conf}"
+CERTBOT_EMAIL="${CERTBOT_EMAIL:-}"
+CERT_PATH="/etc/letsencrypt/live/${DOMAIN}/fullchain.pem"
+
+mkdir -p "$(dirname "$OUTPUT_FILE")"
+
+NGINX_CONFIG=$(cat <<NGINX
+server {
+    listen 80;
+    server_name ${DOMAIN};
+
+    location /api/telegram/webhook {
+        proxy_pass http://127.0.0.1:${BOT_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:${BOT_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:${HTTP_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+NGINX
+
+)
+
+write_nginx_config() {
+  if [[ "$OUTPUT_FILE" == /etc/nginx/* ]]; then
+    echo "$NGINX_CONFIG" | sudo tee "$OUTPUT_FILE" >/dev/null
+  else
+    echo "$NGINX_CONFIG" > "$OUTPUT_FILE"
+  fi
+}
+
+check_dependencies() {
+  if ! command -v node >/dev/null 2>&1; then
+    echo "Node.js is required but not found." >&2
+    exit 1
+  fi
+  if ! command -v pm2 >/dev/null 2>&1; then
+    echo "PM2 is required but not found." >&2
+    exit 1
+  fi
+  if ! command -v nginx >/dev/null 2>&1; then
+    echo "Nginx is required but not found." >&2
+    exit 1
+  fi
+}
+
+handle_certbot() {
+  if command -v certbot >/dev/null 2>&1; then
+    if [[ ! -f "$CERT_PATH" ]]; then
+      if [[ -z "$CERTBOT_EMAIL" ]]; then
+        echo "CERTBOT_EMAIL is required to request SSL certificate." >&2
+      else
+        echo "Requesting SSL certificate for ${DOMAIN} via certbot..."
+        sudo certbot --nginx -d "${DOMAIN}" --non-interactive --agree-tos -m "${CERTBOT_EMAIL}" --redirect || true
+      fi
+    else
+      echo "SSL certificate already exists at ${CERT_PATH}."
+    fi
+  else
+    echo "certbot is not installed. Skipping SSL request."
+  fi
+}
+
+reload_nginx() {
+  if nginx -t; then
+    sudo nginx -s reload || sudo systemctl reload nginx || true
+    echo "Nginx reloaded."
+  else
+    echo "Nginx config test failed. Skipping reload." >&2
+  fi
+}
+
+case "$COMMAND" in
+  start)
+    check_dependencies
+    write_nginx_config
+    reload_nginx
+    handle_certbot
+    reload_nginx
+    echo "Starting PM2 apps using $PM2_CONFIG..."
+    pm2 start "$PM2_CONFIG"
+    ;;
+  stop)
+    check_dependencies
+    echo "Stopping PM2 apps using $PM2_CONFIG..."
+    pm2 stop "$PM2_CONFIG"
+    ;;
+  restart)
+    check_dependencies
+    write_nginx_config
+    reload_nginx
+    handle_certbot
+    reload_nginx
+    echo "Restarting PM2 apps using $PM2_CONFIG..."
+    pm2 restart "$PM2_CONFIG"
+    ;;
+  status)
+    check_dependencies
+    pm2 status
+    ;;
+esac
+
+echo "Generated proxy config at: $OUTPUT_FILE"

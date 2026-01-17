@@ -36,7 +36,7 @@ const generateHistory = (): Transaction[] => {
       type: 'Expense',
       category: categories[Math.floor(Math.random() * categories.length)],
       date,
-      note: `Transaksi v3.5 #${i}`
+      note: `Transaksi v4.1 #${i}`
     });
     
     if (i % 30 === 0) {

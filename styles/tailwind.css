@@ -1,0 +1,295 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+:root {
+  --bg: #e0e5ec;
+  --bg-alt: #d5dde8;
+  --shadow-light: #ffffff;
+  --shadow-dark: #c8cdd4;
+  --text-primary: #2d3748;
+  --text-secondary: #718096;
+  --accent: #3b82f6;
+  --accent-light: #60a5fa;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+}
+
+.dark {
+  --bg: #1e2227;
+  --bg-alt: #16181c;
+  --shadow-light: #2a2f36;
+  --shadow-dark: #0a0b0d;
+  --text-primary: #f7fafc;
+  --text-secondary: #a0aec0;
+  --accent: #60a5fa;
+  --accent-light: #93c5fd;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  background-color: var(--bg);
+  color: var(--text-secondary);
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  transition: background-color 0.3s ease, color 0.3s ease;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Neumorphic Styles */
+.neu-flat {
+  background: var(--bg);
+  box-shadow: 
+    8px 8px 16px var(--shadow-dark), 
+    -8px -8px 16px var(--shadow-light);
+  border-radius: 24px;
+}
+
+.neu-inset {
+  background: var(--bg);
+  box-shadow: 
+    inset 4px 4px 8px var(--shadow-dark), 
+    inset -4px -4px 8px var(--shadow-light);
+  border-radius: 16px;
+}
+
+.neu-button {
+  background: var(--bg);
+  box-shadow: 
+    5px 5px 10px var(--shadow-dark), 
+    -5px -5px 10px var(--shadow-light);
+  border-radius: 16px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.neu-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 
+    7px 7px 14px var(--shadow-dark), 
+    -7px -7px 14px var(--shadow-light);
+}
+
+.neu-button:active {
+  transform: scale(0.98);
+  box-shadow: 
+    inset 3px 3px 6px var(--shadow-dark), 
+    inset -3px -3px 6px var(--shadow-light);
+}
+
+.neu-card {
+  background: var(--bg);
+  box-shadow: 
+    10px 10px 20px var(--shadow-dark), 
+    -10px -10px 20px var(--shadow-light);
+  border-radius: 24px;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.neu-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 
+    14px 14px 28px var(--shadow-dark), 
+    -14px -14px 28px var(--shadow-light);
+}
+
+/* Text Colors */
+.text-primary { color: var(--text-primary); }
+.text-secondary { color: var(--text-secondary); }
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--shadow-dark);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--accent);
+}
+
+/* Custom Checkbox */
+.custom-checkbox {
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 8px;
+  background: var(--bg);
+  box-shadow: 
+    inset 2px 2px 4px var(--shadow-dark), 
+    inset -2px -2px 4px var(--shadow-light);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.custom-checkbox:checked {
+  background: var(--accent);
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
+}
+
+.custom-checkbox:checked::after {
+  content: '✓';
+  color: white;
+  font-weight: bold;
+  font-size: 12px;
+}
+
+/* Glass Card */
+.glass-card {
+  background: rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.4s ease-out forwards;
+}
+
+/* Print Styles */
+@media print {
+  .no-print { display: none !important; }
+  body { 
+    background: white !important; 
+    color: black !important; 
+  }
+  .neu-card, .neu-flat, .neu-inset, .neu-button {
+    box-shadow: none !important;
+    border: 1px solid #ddd !important;
+    background: white !important;
+  }
+}
+
+/* Responsive Helpers */
+@media (max-width: 768px) {
+  .neu-card {
+    border-radius: 20px;
+    box-shadow: 
+      6px 6px 12px var(--shadow-dark), 
+      -6px -6px 12px var(--shadow-light);
+  }
+  
+  .neu-card:hover {
+    transform: none;
+    box-shadow: 
+      6px 6px 12px var(--shadow-dark), 
+      -6px -6px 12px var(--shadow-light);
+  }
+  
+  .neu-button {
+    box-shadow: 
+      3px 3px 6px var(--shadow-dark), 
+      -3px -3px 6px var(--shadow-light);
+    border-radius: 12px;
+  }
+  
+  .neu-button:hover {
+    transform: none;
+  }
+  
+  .neu-inset {
+    box-shadow: 
+      inset 3px 3px 6px var(--shadow-dark), 
+      inset -3px -3px 6px var(--shadow-light);
+    border-radius: 12px;
+  }
+}
+
+/* Hide scrollbar but keep functionality */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* Horizontal scroll snap for cards */
+.scroll-snap-x {
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+
+.scroll-snap-center {
+  scroll-snap-align: center;
+}
+
+.scroll-snap-start {
+  scroll-snap-align: start;
+}
+
+/* Touch-friendly button sizes */
+@media (max-width: 640px) {
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* Safe area padding for notched devices */
+@supports (padding: max(0px)) {
+  .safe-area-bottom {
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+  }
+  
+  .safe-area-top {
+    padding-top: max(16px, env(safe-area-inset-top));
+  }
+}
+
+/* Smooth momentum scrolling */
+.momentum-scroll {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* Bank icon image styles */
+.bank-icon-img {
+  object-fit: contain;
+  image-rendering: -webkit-optimize-contrast;
+}
+
+/* Account grid mobile overflow fix */
+@media (max-width: 640px) {
+  .space-y-3 > .grid {
+    max-width: 100%;
+  }
+  
+  .space-y-3 > .grid > button {
+    max-width: 100%;
+    word-break: break-word;
+  }
+}
